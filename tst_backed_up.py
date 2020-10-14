@@ -2,15 +2,78 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-BATCH_SIZE = 32
-FEATURES = 5
-m_init = np.zeros((FEATURES, 1))
-alpha = np.full((FEATURES, 1), 0.5)
-beta = np.full((FEATURES, 1), 0.5)
+
+class Momentum:
+    def __init__(self, num_features=5, alpha=0.7, beta=0.9):
+        self.m = np.zeros((num_features, 1))
+        self.alpha = alpha
+        self.beta = beta
+
+    def optimize_weights(self, weights, grads):
+        self.m = self.beta * self.m + (1 - self.beta) * grads
+        new_weights = weights - (self.alpha * self.m)
+
+        return new_weights
+
+
+class Model:
+    def __init__(self, num_features=5, alpha=0.03):
+        self.weights = np.zeros((num_features, 1)) + 5
+        self.optimizer = Momentum()
+        self.num_features = num_features
+        self.alpha = alpha
+
+    def predict(self, x):
+        return self.sigmoid(x @ self.weights)
+
+    @staticmethod
+    def sigmoid(z):
+        y = 1 / (1 + np.exp(-z))
+        return y
+
+    def optimize_once(self, x, y):
+        grad_reg = self.alpha * np.sign(self.weights)
+        grad_reg[0, 0] = 0
+        loss_reg = np.sum(self.alpha * np.abs(self.weights))
+
+        ones = np.ones(y.shape)
+        hypothesis = self.predict(x)
+        grads = (-y @ np.log(hypothesis) - (ones - y) @ np.log(ones - hypothesis)) / x.shape[0]  # + grad_reg
+
+        # self.weights = self.optimizer.optimize_weights(self.weights, grads)
+        loss_train = (y - hypothesis).T @ (y - hypothesis) / x.shape[0]
+
+        return loss_train, grads, loss_reg
+
+    def fit(self, x, y, batch_size=32, grad_tol=0.001, epochs=50):
+        self.x_train = x[:batch_size]
+        self.y_train = y[:batch_size]
+        self.x_test = x[batch_size:]
+        self.y_test = y[batch_size:]
+
+        grad_norm = np.inf
+        n_iter = 0
+        losses_train, losses_test, losses_reg  = [], [], []
+
+        while (grad_norm > grad_tol) and (n_iter < epochs):
+            loss_train, grads, loss_reg = self.optimize_once(self.x_train, self.y_train)
+            grad_norm = np.linalg.norm(grads)
+            n_iter += 1
+            loss_test = (self.y_test - self.predict(self.x_test)).T @ (self.y_test - self.predict(self.x_test)) / self.x_test.shape[0]
+
+            losses_train.append(loss_train[0][0])
+            losses_test.append(loss_test)
+            losses_reg.append(loss_reg)
+
+        return np.array(losses_train), np.array(losses_test), np.array(losses_reg)
+
+    def predict_proba(self, x):
+        print(self.predict(x))
 
 
 def normalize(features):
     new_features = np.asarray(features).T
+
     for feature in new_features:
         min_f = np.min(feature)
         max_f = np.max(feature)
@@ -21,84 +84,18 @@ def normalize(features):
     return new_features.T
 
 
-class Momentum:
-    def __init__(self, num_features=5):
-        self.m = np.zeros((num_features, 1))
-
-    def regularization(self, weight, grad):
-        self.m = beta * self.m + (1 - beta) * grad
-        weight = weight - (alpha * self.m)
-        return weight
-
-
-class Model:
-    def __init__(self, batch_size=BATCH_SIZE, num_features=5, alpha=0.004):
-        self.weights = np.zeros((num_features, 1))
-        self.optimizer = Momentum(5)
-        # print(self.weights)
-        self.alpha = alpha
-        self.batch_size = batch_size
-
-    def predict(self, x):
-        y = x @ self.weights
-        return y
-
-    def optimize_once(self, x, y_true):
-        # fix this gradient
-        grad_reg = self.alpha * np.sign(self.weights)
-        grad_reg[0, 0] = 0
-        # reg_loss = np.sum(self.alpha * np.abs(self.weights))
-        # grads = x.T @ (y_true - x @ self.weights) / x.shape[0]
-        grads = - x.T @ (y_true - x @ self.weights) / x.shape[0] + grad_reg
-        print(grads.shape)
-        grads = np.reshape(grads.T[0], (5, 1))
-        self.weights = self.optimizer.regularization(self.weights, grads)
-        loss = (y_true - self.predict(x)).T @ (y_true - self.predict(x)) / x.shape[0]
-        # print(loss)
-
-        return loss, grads
-
-    def fit(self, x, y_true, x_valid=None, y_valid=None, grad_tol=0.0001, epochs=1000):
-        x_train = x[:self.batch_size]
-        y_train = y_true[:self.batch_size]
-        grad_norm = np.inf
-        n_iter = 0
-        losses = []
-        valid_losses = []
-        while (grad_norm > grad_tol) and (n_iter < epochs):
-            loss, grads = self.optimize_once(x_train, y_train)
-            grad_norm = np.linalg.norm(grads)
-            n_iter += 1
-            valid_loss = ((y_valid) - self.predict(x_valid)).T @ (y_valid - self.predict(x_valid)) / x_valid.shape[0]
-
-            losses.append(loss[0][0])
-
-        return losses
-
-
 if __name__ == "__main__":
-    dataset = pd.read_csv("heart_failure_clinical_records_dataset.csv")
+    df = pd.read_csv("heart_failure_clinical_records_dataset.csv")
     # print(dataset.head())
 
-    alphas = np.arange(0.009, 0.01, 0.0001)
     features = ['age', 'ejection_fraction', 'serum_creatinine', 'serum_sodium', 'time']
-    X_init = dataset[features]
-    Y_init = dataset["DEATH_EVENT"]
+    X_init = df[features]
+    Y_init = df["DEATH_EVENT"]
 
     X = normalize(X_init)
     Y = np.asarray(Y_init).copy()
-    x_valid = X[32:]
-    y_valid = Y[32:]
 
-    model = Model(BATCH_SIZE, alpha=0.9)
-    model.fit(X, Y, x_valid, y_valid)
-    y_pred = model.predict(X[32:100])
-
-    print("y pred shape:", y_pred.shape)
-    # print("y pred: ", y_pred)
-    print("y pred: ")
-    for i in range(32, 100):
-        print(y_pred[32 - i], Y[i])
-
-
-
+    model = Model()
+    model.fit(X, Y)
+    model.predict_proba(X[100:120])
+    print(Y[100:120])
