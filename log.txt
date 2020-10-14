@@ -1,0 +1,3 @@
+14.10 11:00
++ added gradient function
+- trying to fix another problems
