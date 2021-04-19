@@ -1,3 +1,8 @@
 14.10 11:00
 + added gradient function
 - trying to fix another problems
+
+14.10 15:04
++ upd: gradient function was wrong
++ fixed gradient function
+- but cannot understand where to insert 'grad_reg' variable for properly working of model
